@@ -8,6 +8,25 @@ import java.util.List;
 import java.util.ArrayList;
 import java.util.Scanner;
 
+
+/* 
+Utility class built to act as a helper tool for the simulation of Telecom call data which can be used as 
+Proof of concept for Big Data demonstrations.
+
+
+The applications uses preconfigured parameters ( such as Phone numbers, Account Information, Product Information)
+to simulate calls.
+
+Simulated calls are recorded within generated CDR files.
+
+Current version only support Voice Calls.
+
+Author: Christopher Ogirri
+Version: 1.0
+
+
+
+*/
 public class Initiator {
 
 
@@ -18,21 +37,31 @@ public class Initiator {
 	List<Subscriber>  offnetList=new ArrayList<Subscriber>();
 	HashMap<String,Product> products = new HashMap<String,Product>();
 
-
-	String confDir="/home/biadmin/bigdemo/ocs/conf/";
+	//Set up of Configuration Directory, set up as environment variable within the executing platform
+	String confDir=System.getenv("BIGDEMO_CONF_DIR");
 
 	Initiator() throws IOException {
-		//Get configured resources
+	
+		if ( null == confDir) {
+			System.out.println(" Configuration Directory is not set.... Application exiting");
+			System.exit(1);
+		}
+		//Get configured phone number resources
 		String onnetConfFile = confDir + "onnet.numbers";
 		String offnetConfFile = confDir + "offnet.numbers";
 		
-
+		//Get configured Product Information
 		getProductInformation(confDir +"products.list");
+		
+		//Setup Customer/Information Data Structures and lifecycle
 		createSubList(getSubInformation(onnetConfFile),0);
 		createSubList(getSubInformation(offnetConfFile),1);
 
 	}
-
+	
+	
+	//Read Subscriber information from the Configured Subscriber file. 
+	// Please see the README for file template information
 	private List<String> getSubInformation(String confFile) throws IOException {
 		//String onnetConfFile = confDir + "onnet.numbers";
 		ArrayList<String> tempList = new ArrayList<String>();
@@ -51,6 +80,7 @@ public class Initiator {
 		
 	}
 
+	//Read Product information from the Configured Product Information file.
 	private void getProductInformation(String confFile) throws IOException {
 		
 		ArrayList<String> tempList = new ArrayList<String>();
@@ -73,7 +103,7 @@ public class Initiator {
 		} 
 
 	}
-
+	// Initialise Subscriber data structures along with their subscription type ( onnet or offnet)
 	private void createSubList(List<String> subList,int subType) throws IOException {
 
 		if (0==subType) {//Onnet Numbers
@@ -101,7 +131,8 @@ public class Initiator {
 			}			
 		}
 	}
-
+	
+	// Function to get Product information ( charging information) as identified by their Product ID
 	private Product getProduct(String prodID) {
 
 		return products.get(prodID);
@@ -109,13 +140,14 @@ public class Initiator {
 	}
 
 
-
+	// Entry point of application
 	public static void main(String[] a) throws IOException{
 		new Initiator();
 	}
 
 }
 
+// Representative Subscriber class
 class Subscriber {
 
 
@@ -126,7 +158,7 @@ class Subscriber {
 	String acctType;
 	String balance;
 
-
+	// Public constructor
 	public Subscriber(String dn, String imsi, String iccid, Product product, String acctType, String balance) {
 		this.dn=dn;
 		this.imsi=imsi;
@@ -136,6 +168,8 @@ class Subscriber {
 		this.balance=balance;
 	}
 
+	
+	// Getter functions start ... no setter functions defined.  All property setting should be achieved via the Constructor
 	public String getDN() {
 		return dn;
 	}
@@ -161,18 +195,24 @@ class Subscriber {
 	}
 }
 
+
+
+// Representative Subscriber class
 class Product {
 
 	String prodID;
 	String onnetRate;
 	String offnetRate;
 
+	
 	public Product(String prodID, String onnetRate, String offnetRate) {
 		this.prodID=prodID;
 		this.onnetRate=onnetRate;
 		this.offnetRate=offnetRate;
 	}
-
+	
+	
+	// Getter functions start ... no setter functions defined.  All property setting should be achieved via the Constructor
 	public String getProdID() {
 		return prodID;
 
