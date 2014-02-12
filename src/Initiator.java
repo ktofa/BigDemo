@@ -39,6 +39,7 @@ public class Initiator {
 	List<Subscriber> onnetList=new ArrayList<Subscriber>();
 	List<Subscriber>  offnetList=new ArrayList<Subscriber>();
 	HashMap<String,Product> products = new HashMap<String,Product>();
+	HashMap<String,Cell> cellList = new HashMap<String,Cell>();
 	//int prepaidSubCount=0;
 	//int postpaidSubCount=0;
 	
@@ -67,6 +68,8 @@ public class Initiator {
 	//Sequencing INformation
 	String lastSeq= null;
 	
+	LocationMap map;
+	
 	Initiator() throws IOException {
 	
 		if (( null == confDir) || (null == dataDir)){
@@ -77,16 +80,23 @@ public class Initiator {
 		String onnetConfFile = confDir + "onnet.numbers";
 		String offnetConfFile = confDir + "offnet.numbers";
 		
+		//Get Configured Cell Information
+		getCellInformation(confDir + "cell.list");
+		
 		//Get configured Product Information
 		getProductInformation(confDir +"products.list");
 		
-		//Setup Customer/Information Data Structures and lifecycle
+		map = new LocationMap(); 
+		
+		
+		//Setup Customer/Information Data Structures and life cycle
+	
 		createSubList(getSubInformation(onnetConfFile),0);
 		createSubList(getSubInformation(offnetConfFile),1);
 		
 		//Perform post-setup check
-		System.out.println("Total count of prepaid subscribers is " + onnetList.size());
-		System.out.println("Total count of postpaid subscribers is "  + offnetList.size());
+		//System.out.println("Total count of prepaid subscribers is " + onnetList.size());
+		//System.out.println("Total count of postpaid subscribers is "  + offnetList.size());
 		
 		//Initialise Sequencing
 		
@@ -103,6 +113,55 @@ public class Initiator {
 			
 		
 
+	}
+	
+	// Read Cell Information from Cell List... Also set relationships between Cells
+	private void getCellInformation(String confFile) throws IOException {
+	
+		ArrayList<String> tempList = new ArrayList<String>();
+                StringBuilder text = new StringBuilder();
+                String NL = System.getProperty("line.separator");
+                Scanner scanner = new Scanner(new FileInputStream(confFile));
+		try {
+             while (scanner.hasNextLine()){
+				//tempList.add((scanner.nextLine()));
+				String t = scanner.nextLine();
+				tempList.add(t);
+				
+				
+                }
+            }
+             finally{
+                scanner.close();
+        }
+		
+		
+			
+		for (String cell: tempList) {
+			String[] partCell = cell.split(",");
+			//System.out.println("Array Size" + partCell.length);
+			Cell tempCell = new Cell(partCell[0],partCell[1]);
+			cellList.put(partCell[0],tempCell);
+			
+		} 
+		
+		
+		for (String cell: tempList) {
+			String[] partCell = cell.split(",");
+			Cell tempCell = getCell(partCell[0]);
+			if (null!=partCell[2]) {
+				tempCell.setPrev(getCell(partCell[2]));
+				//System.out.println("MAP::: Setting Previous Cell of Cell " + partCell[0] + " to: " + getCell(partCell[2]));
+			}
+			if (null!=partCell[3]) {
+				tempCell.setNext(getCell(partCell[3]));
+				//System.out.println("MAP::: Setting Next Cell of Cell " + partCell[0] + " to: " + (getCell(partCell[3])));
+			}
+			
+			
+		}
+		
+	
 	}
 	
 	
@@ -164,7 +223,11 @@ public class Initiator {
 				Product product=getProduct(currentSub[3]);
 				String acctType=currentSub[4];
 				String balance=currentSub[5];
-				onnetList.add(new Subscriber(dn,imsi,iccid,product,acctType,balance));
+				Cell c= getCell(currentSub[6]);
+				Subscriber tempSub = new Subscriber(dn,imsi,iccid,product,acctType,balance,c);
+				onnetList.add(tempSub);
+				map.add(tempSub,c);
+				
 				//System.out.println("Adding new Subscriber to the Onnet Sub List... Total Onnet subs: " + onnetList.size());	
 			}
 		}
@@ -174,7 +237,7 @@ public class Initiator {
                                 String dn=currentSub[0];
                                 String imsi=currentSub[1];
                                 String iccid=currentSub[2];
-				offnetList.add(new Subscriber(dn,imsi,iccid,null,"0","0"));
+				offnetList.add(new Subscriber(dn,imsi,iccid,null,"0","0",null));
 				//System.out.println("Adding new Subscriber to the offnet Sub List... Total offnet subs: " + offnetList.size());
 
 			}			
@@ -252,6 +315,19 @@ public class Initiator {
 		//System.out.print(" Randomly selected MO is : " + MO.getDN() + " while selected MT is :" + MT.getDN() + " ");
 		//System.out.println(" Call Type is " + callType + " with product " + MO.getProduct());
 		
+		
+		//Determine 'Location' of call dependent on random . With high skew on customer not moving
+		Cell currentCell = MO.getCell();
+		boolean moveDecider = getRandom(10)>=9 ? true : false;
+		if (moveDecider) {
+			
+			Cell nextCell = map.getNextLocation(MO);
+			
+			MO.setCell(nextCell);
+			//System.out.println("Subscriber " + MO.getDN() + " moved Location from  " + currentCell.getCellID() + " to " + nextCell.getCellID());
+			currentCell = nextCell;
+		}	
+		
 		//Determine call duration and call charge rate
 		String rate=(0==callType)? MO.getProduct().getOnnetRate() : MO.getProduct().getOffnetRate() ;
 		int usableCallDuration = getMaximumDuration(MO.getBalance(),rate);
@@ -282,6 +358,10 @@ public class Initiator {
 	
 	}
 	
+	private Cell getCell(String cellID) {
+		return cellList.get(cellID);
+	}
+	
 	private void logCall(Subscriber MO, Subscriber MT,int callDuration,int callCost, Calendar cal,int callType)  {
 		String s="|";
 		String z="0";
@@ -292,13 +372,14 @@ public class Initiator {
 		String b= MO.getBalance();
 		String c= new String(""+callDuration);
 		String a=MO.getAcctType();
-		String cc = new String(""+callCost);
+		String cc = new String(""+(-callCost));
+		String l=(MO.getCell()).getCellID();
 		
 		String callLog= incrSeq()+s+z+s+t+s+"91"+s+d+s+MT.getDN()+s+MO.getIMSI()+s+s+d+s+s+o+s+"00"+s+MO.getICCID()+s+hlr_number+s;
 		callLog += MO.getIMSI()+s+hlr_number+s+s+t+"32"+s+z+s+z+s+t+s+z+s+"593"+s+z+s+"22724DE005"+s+s+"593"+s+s+s+z+s+"1403"+s;
-		callLog += p +s+d+s+o+s+z+s+t+s+z+s+z+s+z+s+z+s+z+s+s+"234"+s+o+s+"2"+s+"234"+s+o+s+o+s+"234"+o+s+o+s+"234"+s+o+s+o+s;
-		callLog += p+"1000000"+s+incrSeq()+"2"+s+s+z+s+z+s;
-		callLog += b+s+b+s+c+s+z+s+z+s+"1003219384"+s+s+s+a+s+"2"+s+b+s+cc+s+"4500"+s+z+s+z+s+z+s+s+s+s+s+s+z+s+z+s+z+s+z+s+z+s+z+s+z+s;
+		callLog += p+s+d+s+o+s+z+s+t+s+z+s+z+s+z+s+z+s+z+s+s+"234"+s+o+s+"2"+s+"234"+s+o+s+o+s+"234"+o+s+o+s+"234"+s+o+s+o+s;
+		callLog += p+s+"1000000"+s+incrSeq()+s+"2"+s+s+z+s+z+s;
+		callLog += b+s+b+s+c+s+z+s+z+s+l+s+s+s+a+s+"2"+s+b+s+cc+s+"4500"+s+z+s+z+s+z+s+s+s+s+s+s+z+s+z+s+z+s+z+s+z+s+z+s+z+s;
 		callLog += z+s+z+s+z+s+s+s+s+s+s+z+s+z+s+z+s+z+s+z+s+z+s+z+s+z+s+z+s+z+s+z+s+z+s+z+s+z+s+z+s;
 		callLog += t+s+t+s;
 		
@@ -335,15 +416,17 @@ class Subscriber {
 	Product product;
 	String acctType;
 	String balance;
+	Cell cell;
 
 	// Public constructor
-	public Subscriber(String dn, String imsi, String iccid, Product product, String acctType, String balance) {
+	public Subscriber(String dn, String imsi, String iccid, Product product, String acctType, String balance,Cell cell) {
 		this.dn=dn;
 		this.imsi=imsi;
 		this.iccid=iccid;
 		this.product=product;
 		this.acctType=acctType;
 		this.balance=balance;
+		this.cell=cell;
 	}
 
 	
@@ -376,6 +459,16 @@ class Subscriber {
 	public void setBalance(int newBalance) {
 		balance = new String(newBalance+"");
 	}
+	
+	public Cell getCell() {
+		return cell;
+	}
+	
+	public void setCell(Cell c) {
+		cell = c;
+	}
+	
+	
 }
 
 
@@ -407,6 +500,99 @@ class Product {
 
 	public String getOffnetRate() {
 		return offnetRate;
+	}
+
+}
+
+
+// Representative Cell Class
+class Cell {
+
+	String cellID;
+	String cellName;
+	Cell prev;
+	Cell next;
+	
+	
+	public Cell( String cellID, String cellName) {
+		this.cellID=cellID;
+		this.cellName=cellName;
+	
+	}
+	
+	public void setNext(Cell c) {
+		next=c;
+	}
+	
+	public void setPrev(Cell c) {
+		prev=c;
+	}
+	
+	public Cell next() {
+		//System.out.print("MAP::: Current Indepth  Cell is" + cellID );
+		//System.out.println(" while Next Cell is " + next.getCellID());
+		return next;
+		 
+		
+	}
+	
+	public Cell prev() {
+		return prev;
+	}
+	
+	public String getCellID() {
+		return cellID;
+	}
+	
+	public String getCellName() {
+	
+		return cellName;
+	}
+	
+	
+}
+
+//Representative Map class
+class LocationMap {
+	
+	HashMap<Subscriber, Cell> map;
+	
+	public LocationMap() {
+		map = new HashMap<Subscriber, Cell>();
+		
+	}
+	
+	Cell getNextLocation(Subscriber s) {
+		Cell nextCell = (map.get(s)).next();
+		if (null!=nextCell) {
+			//System.out.print("MAP::: Current Cell for Subscriber " +s.getDN()+ " is" +(s.getCell()).getCellID());
+			//System.out.println(" while Next Cell is " + nextCell.getCellID()); 
+		}
+		
+		if (null==nextCell) {
+			nextCell = (map.get(s)).prev();
+			if (null!=nextCell) {
+				//System.out.print("MAP::: Current Cell for Subscriber " +s.getDN()+ " is" +(s.getCell()).getCellID());
+				//System.out.println(" while Next Cell  was null and Previous cell is " + nextCell.getCellID());
+			}
+			if (null==nextCell) {
+				nextCell = (map.get(s));
+				if (null!=nextCell) {
+					//System.out.print("MAP::: Current Cell for Subscriber " +s.getDN()+ " is" +(s.getCell()).getCellID());
+					//System.out.println(" while Next Cell  was null and Previous cell was Null as well, reverting to default cell " + nextCell.getCellID()); 
+					}
+			}
+		}
+		map.put(s,nextCell);
+		return nextCell;
+	}
+	
+	public void add(Subscriber s, Cell c) {
+		map.put(s,c);
+	}
+	
+	public Cell getCurrentLocation(Subscriber s) {
+		return map.get(s);
 	}
 
 }
